@@ -1,8 +1,37 @@
 diff --git a/board/phytec/phycore_imx8mp/spl.c b/board/phytec/phycore_imx8mp/spl.c
-index 3de1e11a..69e67af4 100644
+index 3de1e11a..efff2c27 100644
 --- a/board/phytec/phycore_imx8mp/spl.c
 +++ b/board/phytec/phycore_imx8mp/spl.c
-@@ -227,3 +227,10 @@ void board_init_f(ulong dummy)
+@@ -37,7 +37,28 @@ void set_dram_timings_2ghz_8gb(void);
+ 
+ int spl_board_boot_device(enum boot_device boot_dev_spl)
+ {
++#ifdef CONFIG_SPL_BOOTROM_SUPPORT
+ 	return BOOT_DEVICE_BOOTROM;
++#else
++	switch (boot_dev_spl) {
++	case SD1_BOOT:
++	case MMC1_BOOT:
++	case SD2_BOOT:
++	case MMC2_BOOT:
++		return BOOT_DEVICE_MMC1;
++	case SD3_BOOT:
++	case MMC3_BOOT:
++		return BOOT_DEVICE_MMC2;
++	case QSPI_BOOT:
++		return BOOT_DEVICE_NOR;
++	case NAND_BOOT:
++		return BOOT_DEVICE_NAND;
++	case USB_BOOT:
++		return BOOT_DEVICE_BOARD;
++	default:
++		return BOOT_DEVICE_NONE;
++	}
++#endif
+ }
+ 
+ enum phytec_imx8mp_ddr_eeprom_code {
+@@ -227,3 +248,10 @@ void board_init_f(ulong dummy)
  	/* DDR initialization */
  	spl_dram_init();
  }
@@ -14,7 +43,7 @@ index 3de1e11a..69e67af4 100644
 +}
 +#endif
 diff --git a/common/spl/spl.c b/common/spl/spl.c
-index b452d4fe..7545ebff 100644
+index b452d4fe..3d554e38 100644
 --- a/common/spl/spl.c
 +++ b/common/spl/spl.c
 @@ -36,9 +36,19 @@
@@ -60,7 +89,7 @@ index b452d4fe..7545ebff 100644
 -		jump_to_image_linux(&spl_image);
 +		// jump_to_image_linux(&spl_image);
 +		typedef void __noreturn (*image_entry_noargs_t)(void);  // Falcon mode AN13709 4.3.6
-+		image_entry_noargs_t image_entry = (image_entry_noargs_t)0x00960000;
++		image_entry_noargs_t image_entry = (image_entry_noargs_t)0x00970000;
 +		image_entry();
  #endif
  	default:
@@ -83,7 +112,7 @@ index 2ec71544..650349d4 100644
  			header_size;
  	}
 diff --git a/common/spl/spl_mmc.c b/common/spl/spl_mmc.c
-index cbbd166e..a3af1d7a 100644
+index cbbd166e..bcec92ba 100644
 --- a/common/spl/spl_mmc.c
 +++ b/common/spl/spl_mmc.c
 @@ -46,6 +46,9 @@ static int mmc_load_legacy(struct spl_image_info *spl_image,
@@ -91,13 +120,13 @@ index cbbd166e..a3af1d7a 100644
  			  image_size_sectors,
  			  (void *)(ulong)spl_image->load_addr);
 +	unsigned long count1 = blk_dread(mmc_get_blk_desc(mmc),  // Falcon mode AN13709 4.3.5
-+				0x2FBDAE0, 0x71,
-+				(void*)(ulong)0x00960000);  // write ATF from SD to RAM
++				0x2FCF280, 0x100,                                  // ATF on SD card
++				(void*)(ulong)0x00970000);                         // write ATF from SD to RAM
  	debug("read %x sectors to %lx\n", image_size_sectors,
  	      spl_image->load_addr);
  	if (count != image_size_sectors)
 diff --git a/configs/phycore-imx8mp_defconfig b/configs/phycore-imx8mp_defconfig
-index 349b9ab6..3e1eb2af 100644
+index 349b9ab6..2af849ef 100644
 --- a/configs/phycore-imx8mp_defconfig
 +++ b/configs/phycore-imx8mp_defconfig
 @@ -35,7 +35,7 @@ CONFIG_BOOTCOMMAND="mmc dev ${mmcdev}; if mmc rescan; then env exists dofitboot
@@ -109,8 +138,13 @@ index 349b9ab6..3e1eb2af 100644
  CONFIG_SPL_SYS_MALLOC_SIMPLE=y
  CONFIG_SPL_SEPARATE_BSS=y
  CONFIG_SYS_MMCSD_RAW_MODE_U_BOOT_USE_SECTOR=y
+@@ -156,3 +156,4 @@ CONFIG_USB_GADGET_PRODUCT_NUM=0x0152
+ CONFIG_IMX_WATCHDOG=y
+ CONFIG_OF_LIBFDT_OVERLAY=y
+ CONFIG_FDT_FIXUP_PARTITIONS=y
++CONFIG_CMD_SPL=y
 diff --git a/include/configs/phycore_imx8mp.h b/include/configs/phycore_imx8mp.h
-index 1e801264..20426be0 100644
+index 1e801264..f7feece9 100644
 --- a/include/configs/phycore_imx8mp.h
 +++ b/include/configs/phycore_imx8mp.h
 @@ -178,4 +178,20 @@
@@ -123,14 +157,27 @@ index 1e801264..20426be0 100644
 +#define CONFIG_SPL_MMC 1 // for reading from MMC - PD23.1.0 - 5.15.71
 +#define CONFIG_SPL_LEGACY_IMAGE_SUPPORT 1
 +/* Falcon Mode */
-+//#define CONFIG_SPL_OS_BOOT 1 // activate Falcon Mode
-+ /* (leave this line commented until you finish all the
-+ configurations) */
++#define CONFIG_SPL_OS_BOOT 1 // activate Falcon Mode
++ /* (leave this line commented until you finish all the configurations) */
 +// RAM FDT address
-+#define CONFIG_SYS_SPL_ARGS_ADDR 0x43000000
++#define CONFIG_SYS_SPL_ARGS_ADDR 0x48000000
 +/* Falcon Mode - MMC support */
-+#define CONFIG_SYS_MMCSD_RAW_MODE_ARGS_SECTOR 0x2FAF080
-+#define CONFIG_SYS_MMCSD_RAW_MODE_ARGS_SECTORS 0x58
-+#define CONFIG_SYS_MMCSD_RAW_MODE_KERNEL_SECTOR 0x2FAF0E4
++#define CONFIG_SYS_MMCSD_RAW_MODE_ARGS_SECTOR 0x2FAF080    // FDT sector start
++#define CONFIG_SYS_MMCSD_RAW_MODE_ARGS_SECTORS 0x200       // FDT sectors count
++#define CONFIG_SYS_MMCSD_RAW_MODE_KERNEL_SECTOR 0x2FAF280  // Kernel Image sector start
++#define CONFIG_SYS_OS_BASE 0x1000000  // fake address - needed constant for compilation in Falcon mode
 +
  #endif /* __PHYCORE_IMX8MP_H */
+diff --git a/include/log.h b/include/log.h
+index ce48d514..9a1d3b50 100644
+--- a/include/log.h
++++ b/include/log.h
+@@ -15,6 +15,8 @@
+ #include <linux/bitops.h>
+ #include <linux/list.h>
+ 
++// #define DEBUG
++
+ struct cmd_tbl;
+ 
+ /**
