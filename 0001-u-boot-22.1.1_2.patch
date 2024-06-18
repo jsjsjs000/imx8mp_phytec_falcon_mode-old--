@@ -1,0 +1,160 @@
+diff --git a/arch/arm/mach-imx/imx8m/soc.c b/arch/arm/mach-imx/imx8m/soc.c
+index 03db96dc..d9a309fe 100644
+--- a/arch/arm/mach-imx/imx8m/soc.c
++++ b/arch/arm/mach-imx/imx8m/soc.c
+@@ -261,6 +261,8 @@ int dram_init_banksize(void)
+ 		sdram_b2_size = 0;
+ 	}
+ 
++	// gd->bd = (struct bd_info*)malloc(sizeof(struct bd_info)); // falcon mode - fix
++
+ 	gd->bd->bi_dram[bank].start = PHYS_SDRAM;
+ 	if (rom_pointer[1]) {
+ 		phys_addr_t optee_start = (phys_addr_t)rom_pointer[0];
+diff --git a/common/spl/spl.c b/common/spl/spl.c
+index e3d84082..72e8300f 100644
+--- a/common/spl/spl.c
++++ b/common/spl/spl.c
+@@ -33,8 +33,19 @@
+ #include <bootcount.h>
+ #include <wdt.h>
+ 
++#include <asm/gpio.h>
++#include <linux/delay.h>
++
+ DECLARE_GLOBAL_DATA_PTR;
+ 
++
++// Falcon mode AN13709 4.3.7
++// from u-boot-imx/arch/arm/dts/imx8mp-phyboard-pollux-rdk.dts:
++// MX8MP_IOMUXC_SAI1_MCLK__GPIO4_IO20
++#define RESET_ETH1_GPIO IMX_GPIO_NR(4,20)
++#define USDHC_GPIO_PAD_CTRL (PAD_CTL_HYS | PAD_CTL_DSE1)
++
++
+ #ifndef CONFIG_SYS_UBOOT_START
+ #define CONFIG_SYS_UBOOT_START	CONFIG_SYS_TEXT_BASE
+ #endif
+@@ -717,15 +728,18 @@ void board_init_r(gd_t *dummy1, ulong dummy2)
+ 		break;
+ #endif
+ #ifdef CONFIG_SPL_OS_BOOT
+-	case IH_OS_LINUX:
+-		debug("Jumping to Linux\n");
++ case IH_OS_LINUX:
++ debug("Jumping to Linux\n");
+ #if defined(CONFIG_SYS_SPL_ARGS_ADDR)
+-		spl_fixup_fdt((void *)CONFIG_SYS_SPL_ARGS_ADDR);
+-#endif
+-		spl_board_prepare_for_linux();
+-		jump_to_image_linux(&spl_image);
+-#endif
+-	default:
++ spl_fixup_fdt((void *)CONFIG_SYS_SPL_ARGS_ADDR);
++#endif
++ spl_board_prepare_for_linux();
++ typedef void __noreturn (*image_entry_noargs_t)
++(void);
++ image_entry_noargs_t image_entry =
++ (image_entry_noargs_t)0x00970000;
++ image_entry();
++#endif 	default:
+ 		debug("Unsupported OS image.. Jumping nevertheless..\n");
+ 	}
+ #if CONFIG_VAL(SYS_MALLOC_F_LEN) && !defined(CONFIG_SYS_SPL_MALLOC_SIZE)
+@@ -741,6 +755,16 @@ void board_init_r(gd_t *dummy1, ulong dummy2)
+ 		debug("Failed to stash bootstage: err=%d\n", ret);
+ #endif
+ 
++
++
++		// Falcon mode AN13709 4.3.7
++	gpio_request(RESET_ETH1_GPIO, "reset_eth1_gpio");
++	gpio_direction_output(RESET_ETH1_GPIO, 0);
++	mdelay(1);
++	gpio_direction_output(RESET_ETH1_GPIO, 1);
++	mdelay(1);
++
++
+ 	debug("loaded - jumping to %s...\n", spl_phase_name(spl_next_phase()));
+ 	spl_board_prepare_for_boot();
+ 	jump_to_image_no_args(&spl_image);
+diff --git a/common/spl/spl_legacy.c b/common/spl/spl_legacy.c
+index 82d03268..3d67bacc 100644
+--- a/common/spl/spl_legacy.c
++++ b/common/spl/spl_legacy.c
+@@ -39,7 +39,9 @@ int spl_parse_legacy_header(struct spl_image_info *spl_image,
+ 	} else {
+ 		spl_image->entry_point = image_get_ep(header);
+ 		/* Load including the header */
+-		spl_image->load_addr = image_get_load(header) -
++		// spl_image->load_addr = image_get_load(header) -
++		// 	header_size;
++		spl_image->load_addr = image_get_ep(header) -  // Falcon mode AN13709 4.3.4
+ 			header_size;
+ 		spl_image->size = image_get_data_size(header) +
+ 			header_size;
+diff --git a/common/spl/spl_mmc.c b/common/spl/spl_mmc.c
+index d3ce1efc..98d05c97 100644
+--- a/common/spl/spl_mmc.c
++++ b/common/spl/spl_mmc.c
+@@ -35,6 +35,9 @@ static int mmc_load_legacy(struct spl_image_info *spl_image, struct mmc *mmc,
+ 	/* Read the header too to avoid extra memcpy */
+ 	count = blk_dread(mmc_get_blk_desc(mmc), sector, image_size_sectors,
+ 			  (void *)(ulong)spl_image->load_addr);
++	unsigned long count1 = blk_dread(mmc_get_blk_desc(mmc),  // Falcon mode AN13709 4.3.5
++				0x2FCF280, 0x100,                                  // ATF on SD card
++				(void*)(ulong)0x00970000);                         // write ATF from SD to RAM
+ 	debug("read %x sectors to %lx\n", image_size_sectors,
+ 	      spl_image->load_addr);
+ 	if (count != image_size_sectors)
+diff --git a/configs/phycore-imx8mp_defconfig b/configs/phycore-imx8mp_defconfig
+index 754387be..63f60be6 100644
+--- a/configs/phycore-imx8mp_defconfig
++++ b/configs/phycore-imx8mp_defconfig
+@@ -33,7 +33,7 @@ CONFIG_SYS_EXTRA_OPTIONS="IMX_CONFIG=arch/arm/mach-imx/imx8m/imximage-8mp-lpddr4
+ CONFIG_DEFAULT_FDT_FILE="oftree"
+ CONFIG_BOARD_LATE_INIT=y
+ CONFIG_SPL_BOARD_INIT=y
+-CONFIG_SPL_BOOTROM_SUPPORT=y
++# CONFIG_SPL_BOOTROM_SUPPORT is not set
+ CONFIG_SPL_SYS_MALLOC_SIMPLE=y
+ CONFIG_SPL_SEPARATE_BSS=y
+ CONFIG_SPL_HASH_SUPPORT=y
+diff --git a/include/configs/phycore_imx8mp.h b/include/configs/phycore_imx8mp.h
+index b7c5eb0d..ca320711 100644
+--- a/include/configs/phycore_imx8mp.h
++++ b/include/configs/phycore_imx8mp.h
+@@ -216,4 +216,19 @@
+ /* I2C */
+ #define CONFIG_SYS_I2C_SPEED		100000
+ 
++// #define CONFIG_CMD_SPL 1 // enable spl export command
++// #define CONFIG_SPL_MMC_SUPPORT 1 // for reading from MMC
++// #define CONFIG_SPL_LEGACY_IMAGE_SUPPORT 1
++// /* Falcon Mode */
++// #define CONFIG_SPL_OS_BOOT 1 // activate Falcon Mode
++//  /* (leave this line commented until you finish all the
++//  configurations) */
++// // RAM FDT address
++// #define CONFIG_SYS_SPL_ARGS_ADDR 0x48000000
++// /* Falcon Mode - MMC support */
++// #define CONFIG_SYS_MMCSD_RAW_MODE_ARGS_SECTOR 0x2FAF080    // FDT sector start
++// #define CONFIG_SYS_MMCSD_RAW_MODE_ARGS_SECTORS 0x200       // FDT sectors count
++// #define CONFIG_SYS_MMCSD_RAW_MODE_KERNEL_SECTOR 0x2FAF280  // Kernel Image sector start
++// #define CONFIG_SYS_OS_BASE 0x1000                          // fake address - fix compilation error
++
+ #endif /* __PHYCORE_IMX8MP_H */
+diff --git a/include/log.h b/include/log.h
+index 2d27f9f6..cb3b4130 100644
+--- a/include/log.h
++++ b/include/log.h
+@@ -15,6 +15,8 @@
+ #include <linux/bitops.h>
+ #include <linux/list.h>
+ 
++#define DEBUG // jarsulk
++
+ struct cmd_tbl;
+ 
+ /**
