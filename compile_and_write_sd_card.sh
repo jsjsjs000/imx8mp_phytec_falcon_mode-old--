@@ -4,11 +4,11 @@
 # sdcard=/dev/sdb      # jarsulk home PC
 # sdcard=/dev/mmcblk0  # PCO laptop internal SD card reader
 
+pd=23.1.0
+firmware=firmware-imx-8.18.1
 # pd=22.1.1
 # firmware=firmware-imx-8.14
 # firmware=firmware-imx-8.18.1
-pd=23.1.0
-firmware=firmware-imx-8.18.1
 
 # flash_evk=flash_evk         # normal boot
 flash_evk=flash_evk_falcon  # Falcon boot
@@ -25,8 +25,6 @@ echo -e "flash_evk = ${flash_evk}${default}"
 echo
 lsblk -e7
 echo
-
-sleep 1
 
 if [ -z "${USER}" ]; then
 	echo -e "${red}\nVariable 'USER' not defined in script.${default}\n"
@@ -48,19 +46,22 @@ if [ -z "${flash_evk}" ]; then
 	exit 1
 fi
 
+sleep 1
+
 # -------------------------------------
 cd imx-atf/
 # Phytec SDK toolchain
 source /opt/ampliphy-vendor-xwayland/BSP-Yocto-NXP-i.MX8MP-PD$pd/environment-setup-cortexa53-crypto-phytec-linux
 set sysroot /opt/ampliphy-vendor-xwayland/BSP-Yocto-NXP-i.MX8MP-PD$pd/sysroots/cortexa53-crypto-phytec-linux
 
+rm -rf build/
 make distclean
 make -j16 CROSS_COMPILE=aarch64-phytec-linux- PLAT=imx8mp LD=aarch64-phytec-linux-ld CC=aarch64-phytec-linux-gcc  IMX_BOOT_UART_BASE=0x30890000 IMX_BOOT_UART_BASE=0x30860000 LDFLAGS= bl31
 cp build/imx8mp/release/bl31.bin ../imx-mkimage/iMX8M/  # 1
 cd ..
 
 if [ ! -f imx-atf/build/imx8mp/release/bl31.bin ]; then
-	echo "${red}Error: File imx-atf/build/imx8mp/release/bl31.bin not exist${default}"
+	echo -e "${red}Error: File imx-atf/build/imx8mp/release/bl31.bin not exist${default}"
 	exit 1
 else
 	echo -e "${yellow}"
@@ -88,7 +89,7 @@ make SOC=iMX8MP dtbs=imx8mp-phyboard-pollux-rdk.dtb $flash_evk
 cd ..
 
 if [ ! -f imx-mkimage/iMX8M/flash.bin ]; then
-	echo "${red}Error: File imx-mkimage/iMX8M/flash.bin not exist${default}"
+	echo -e "${red}Error: File imx-mkimage/iMX8M/flash.bin not exist${default}"
 	exit 1
 else
 	echo -e "${yellow}"
