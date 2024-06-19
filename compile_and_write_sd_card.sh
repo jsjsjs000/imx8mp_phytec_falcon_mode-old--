@@ -1,28 +1,52 @@
 #!/bin/bash
 
-USER=p2119
-# USER=jarsulk
-
-sdcard=/dev/sda      # PCO laptop external SD card reader
+# sdcard=/dev/sda      # PCO laptop external SD card reader
 # sdcard=/dev/sdb      # jarsulk home PC
 # sdcard=/dev/mmcblk0  # PCO laptop internal SD card reader
 
-pd=22.1.1
+# pd=22.1.1
 # firmware=firmware-imx-8.14
+# firmware=firmware-imx-8.18.1
+pd=23.1.0
 firmware=firmware-imx-8.18.1
 
-# pd=23.1.0
-# firmware=firmware-imx-8.18.1
-
-flash_evk=flash_evk         # normal boot
-# flash_evk=flash_evk_falcon  # Falcon boot
+# flash_evk=flash_evk         # normal boot
+flash_evk=flash_evk_falcon  # Falcon boot
 
 default="\e[0m"
 red="\e[31m"
 yellow="\e[33m"
 
 clear
+echo -e "${yellow}USER = $USER"
+echo -e "sdcard = $sdcard"
+echo -e "pd = $pd"
+echo -e "flash_evk = ${flash_evk}${default}"
+echo
 lsblk -e7
+echo
+
+sleep 1
+
+if [ -z "${USER}" ]; then
+	echo -e "${red}\nVariable 'USER' not defined in script.${default}\n"
+	exit 1
+fi
+
+if [ -z "${sdcard}" ]; then
+	echo -e "${red}\nVariable 'sdcard' not defined in script.${default}\n"
+	exit 1
+fi
+
+if [ -z "${pd}" ]; then
+	echo -e "${red}\nVariable 'pd' not defined in script.${default}\n"
+	exit 1
+fi
+
+if [ -z "${flash_evk}" ]; then
+	echo -e "${red}\nVariable 'flash_evk' not defined in script.${default}\n"
+	exit 1
+fi
 
 # -------------------------------------
 cd imx-atf/
@@ -30,7 +54,6 @@ cd imx-atf/
 source /opt/ampliphy-vendor-xwayland/BSP-Yocto-NXP-i.MX8MP-PD$pd/environment-setup-cortexa53-crypto-phytec-linux
 set sysroot /opt/ampliphy-vendor-xwayland/BSP-Yocto-NXP-i.MX8MP-PD$pd/sysroots/cortexa53-crypto-phytec-linux
 
-# rm -rf build/
 make distclean
 make -j16 CROSS_COMPILE=aarch64-phytec-linux- PLAT=imx8mp LD=aarch64-phytec-linux-ld CC=aarch64-phytec-linux-gcc  IMX_BOOT_UART_BASE=0x30890000 IMX_BOOT_UART_BASE=0x30860000 LDFLAGS= bl31
 cp build/imx8mp/release/bl31.bin ../imx-mkimage/iMX8M/  # 1

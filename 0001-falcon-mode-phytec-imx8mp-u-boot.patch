@@ -1,8 +1,8 @@
 diff --git a/board/phytec/phycore_imx8mp/spl.c b/board/phytec/phycore_imx8mp/spl.c
-index 3de1e11a..efff2c27 100644
+index 20f02cbd..cbc3b037 100644
 --- a/board/phytec/phycore_imx8mp/spl.c
 +++ b/board/phytec/phycore_imx8mp/spl.c
-@@ -37,7 +37,28 @@ void set_dram_timings_2ghz_8gb(void);
+@@ -36,7 +36,28 @@ void set_dram_timings_1_5ghz_4gb(void);
  
  int spl_board_boot_device(enum boot_device boot_dev_spl)
  {
@@ -31,7 +31,7 @@ index 3de1e11a..efff2c27 100644
  }
  
  enum phytec_imx8mp_ddr_eeprom_code {
-@@ -227,3 +248,10 @@ void board_init_f(ulong dummy)
+@@ -210,3 +231,10 @@ void board_init_f(ulong dummy)
  	/* DDR initialization */
  	spl_dram_init();
  }
@@ -43,7 +43,7 @@ index 3de1e11a..efff2c27 100644
 +}
 +#endif
 diff --git a/common/spl/spl.c b/common/spl/spl.c
-index b452d4fe..3d554e38 100644
+index b452d4fe..02697689 100644
 --- a/common/spl/spl.c
 +++ b/common/spl/spl.c
 @@ -36,9 +36,19 @@
@@ -82,7 +82,16 @@ index b452d4fe..3d554e38 100644
  #if CONFIG_IS_ENABLED(BOARD_INIT)
  	spl_board_init();
  #endif
-@@ -821,7 +840,10 @@ void board_init_r(gd_t *dummy1, ulong dummy2)
+@@ -814,14 +833,18 @@ void board_init_r(gd_t *dummy1, ulong dummy2)
+ 		spl_invoke_opensbi(&spl_image);
+ 		break;
+ #endif
+-#if CONFIG_IS_ENABLED(OS_BOOT)
++// #if CONFIG_IS_ENABLED(OS_BOOT)
++#ifdef CONFIG_SPL_OS_BOOT
+ 	case IH_OS_LINUX:
+ 		debug("Jumping to Linux\n");
+ #if defined(CONFIG_SYS_SPL_ARGS_ADDR)
  		spl_fixup_fdt((void *)CONFIG_SYS_SPL_ARGS_ADDR);
  #endif
  		spl_board_prepare_for_linux();
@@ -144,17 +153,19 @@ index 349b9ab6..2af849ef 100644
  CONFIG_FDT_FIXUP_PARTITIONS=y
 +CONFIG_CMD_SPL=y
 diff --git a/include/configs/phycore_imx8mp.h b/include/configs/phycore_imx8mp.h
-index 1e801264..f7feece9 100644
+index 1e801264..9ba22a33 100644
 --- a/include/configs/phycore_imx8mp.h
 +++ b/include/configs/phycore_imx8mp.h
-@@ -178,4 +178,20 @@
+@@ -178,4 +178,22 @@
  #define CONFIG_USB_MAX_CONTROLLER_COUNT         2
  #define CONFIG_SERIAL_TAG
  
 +  // Falcon mode AN13709 4.3.2
 +#define CONFIG_CMD_SPL 1 // enable spl export command
-+// #define CONFIG_SPL_MMC_SUPPORT 1 // for reading from MMC
-+#define CONFIG_SPL_MMC 1 // for reading from MMC - PD23.1.0 - 5.15.71
++
++// #define CONFIG_SPL_MMC_SUPPORT 1 // for reading from MMC - older u-boot
++#define CONFIG_SPL_MMC 1 // for reading from MMC - newer u-boot
++
 +#define CONFIG_SPL_LEGACY_IMAGE_SUPPORT 1
 +/* Falcon Mode */
 +#define CONFIG_SPL_OS_BOOT 1 // activate Falcon Mode
@@ -165,7 +176,7 @@ index 1e801264..f7feece9 100644
 +#define CONFIG_SYS_MMCSD_RAW_MODE_ARGS_SECTOR 0x2FAF080    // FDT sector start
 +#define CONFIG_SYS_MMCSD_RAW_MODE_ARGS_SECTORS 0x200       // FDT sectors count
 +#define CONFIG_SYS_MMCSD_RAW_MODE_KERNEL_SECTOR 0x2FAF280  // Kernel Image sector start
-+#define CONFIG_SYS_OS_BASE 0x1000000  // fake address - needed constant for compilation in Falcon mode
++#define CONFIG_SYS_OS_BASE 0x1000000                       // fake address - needed constant for compilation in Falcon mode
 +
  #endif /* __PHYCORE_IMX8MP_H */
 diff --git a/include/log.h b/include/log.h
