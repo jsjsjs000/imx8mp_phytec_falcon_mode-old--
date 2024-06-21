@@ -1,3 +1,34 @@
+diff --git a/arch/arm/mach-imx/imx8m/soc.c b/arch/arm/mach-imx/imx8m/soc.c
+index c98a52b8..a2c562fd 100644
+--- a/arch/arm/mach-imx/imx8m/soc.c
++++ b/arch/arm/mach-imx/imx8m/soc.c
+@@ -249,7 +249,7 @@ int dram_init(void)
+ 		return ret;
+ 
+ 	/* rom_pointer[1] contains the size of TEE occupies */
+-	if (rom_pointer[1])
++	if (!IS_ENABLED(CONFIG_ARMV8_PSCI) && !IS_ENABLED(CONFIG_SPL_BUILD) && rom_pointer[1])
+ 		gd->ram_size = sdram_size - rom_pointer[1];
+ 	else
+ 		gd->ram_size = sdram_size;
+@@ -278,7 +278,7 @@ int dram_init_banksize(void)
+ 	}
+ 
+ 	gd->bd->bi_dram[bank].start = PHYS_SDRAM;
+-	if (rom_pointer[1]) {
++	if (!IS_ENABLED(CONFIG_ARMV8_PSCI) && !IS_ENABLED(CONFIG_SPL_BUILD) && rom_pointer[1]) {
+ 		phys_addr_t optee_start = (phys_addr_t)rom_pointer[0];
+ 		phys_size_t optee_size = (size_t)rom_pointer[1];
+ 
+@@ -323,7 +323,7 @@ phys_size_t get_effective_memsize(void)
+ 			sdram_b1_size = sdram_size;
+ 		}
+ 
+-		if (rom_pointer[1]) {
++		if (!IS_ENABLED(CONFIG_ARMV8_PSCI) && !IS_ENABLED(CONFIG_SPL_BUILD) && rom_pointer[1]) {
+ 			/* We will relocate u-boot to Top of dram1. Tee position has two cases:
+ 			 * 1. At the top of dram1,  Then return the size removed optee size.
+ 			 * 2. In the middle of dram1, return the size of dram1.
 diff --git a/board/phytec/phycore_imx8mp/spl.c b/board/phytec/phycore_imx8mp/spl.c
 index 20f02cbd..cbc3b037 100644
 --- a/board/phytec/phycore_imx8mp/spl.c
@@ -42,6 +73,19 @@ index 20f02cbd..cbc3b037 100644
 + return 0;
 +}
 +#endif
+diff --git a/common/dlmalloc.c b/common/dlmalloc.c
+index 11729e8c..0231105e 100644
+--- a/common/dlmalloc.c
++++ b/common/dlmalloc.c
+@@ -625,7 +625,7 @@ void mem_malloc_init(ulong start, ulong size)
+ 	malloc_init();
+ #endif
+ 
+-	debug("using memory %#lx-%#lx for malloc()\n", mem_malloc_start,
++	debug("using memory %lx-%lx for malloc()\n", mem_malloc_start,
+ 	      mem_malloc_end);
+ #ifdef CONFIG_SYS_MALLOC_CLEAR_ON_INIT
+ 	memset((void *)mem_malloc_start, 0x0, size);
 diff --git a/common/spl/spl.c b/common/spl/spl.c
 index b452d4fe..02697689 100644
 --- a/common/spl/spl.c
@@ -135,28 +179,54 @@ index cbbd166e..bcec92ba 100644
  	      spl_image->load_addr);
  	if (count != image_size_sectors)
 diff --git a/configs/phycore-imx8mp_defconfig b/configs/phycore-imx8mp_defconfig
-index 349b9ab6..2af849ef 100644
+index 349b9ab6..f07bcf1f 100644
 --- a/configs/phycore-imx8mp_defconfig
 +++ b/configs/phycore-imx8mp_defconfig
-@@ -35,7 +35,7 @@ CONFIG_BOOTCOMMAND="mmc dev ${mmcdev}; if mmc rescan; then env exists dofitboot
+@@ -35,7 +35,6 @@ CONFIG_BOOTCOMMAND="mmc dev ${mmcdev}; if mmc rescan; then env exists dofitboot
  CONFIG_DEFAULT_FDT_FILE="oftree"
  CONFIG_BOARD_LATE_INIT=y
  CONFIG_SPL_BOARD_INIT=y
 -CONFIG_SPL_BOOTROM_SUPPORT=y
-+# CONFIG_SPL_BOOTROM_SUPPORT is not set  // Falcon mode AN13709 4.3.1
  CONFIG_SPL_SYS_MALLOC_SIMPLE=y
  CONFIG_SPL_SEPARATE_BSS=y
  CONFIG_SYS_MMCSD_RAW_MODE_U_BOOT_USE_SECTOR=y
-@@ -156,3 +156,4 @@ CONFIG_USB_GADGET_PRODUCT_NUM=0x0152
+@@ -156,3 +155,31 @@ CONFIG_USB_GADGET_PRODUCT_NUM=0x0152
  CONFIG_IMX_WATCHDOG=y
  CONFIG_OF_LIBFDT_OVERLAY=y
  CONFIG_FDT_FIXUP_PARTITIONS=y
 +CONFIG_CMD_SPL=y
++
++# CONFIG_SPL_BOOTROM_SUPPORT  # Falcon mode AN13709 4.3.1
++CONFIG_SPL_OS_BOOT=y
++CONFIG_SPL_FS_FAT=y
++CONFIG_SPL_MMC_IO_VOLTAGE=y
++CONFIG_SPL_MMC_UHS_SUPPORT=y
++CONFIG_SYS_SPL_ARGS_ADDR=0x48000000
++CONFIG_SPL_FS_LOAD_PAYLOAD_NAME="u-boot.itb"
++CONFIG_SPL_FS_LOAD_KERNEL_NAME="Image.itb"
++CONFIG_SPL_FS_LOAD_ARGS_NAME="imx8mp-phyboard-pollux-rdk-falcon.dtb"
++CONFIG_CMD_SPL_WRITE_SIZE=0xC000
++
++# fake address - fix compilation error
++CONFIG_SYS_OS_BASE=0x1000
++
++# CONFIG_CMD_SPL_WRITE_SIZE=0xC000
++# CONFIG_CUSTOM_SYS_SPL_MALLOC_ADDR=0x42200000
++# CONFIG_HAS_CUSTOM_SPL_MALLOC_START=y
++# CONFIG_SPL_BSS_MAX_SIZE=0x2000
++# CONFIG_SPL_BSS_START_ADDR=0x96e000
++# CONFIG_SPL_MAX_SIZE=0x26000
++# CONFIG_SYS_SPL_ARGS_ADDR=0x43000000
++# CONFIG_SYS_SPL_MALLOC=y
++# CONFIG_SYS_SPL_MALLOC_SIZE=0x80000
++
++# CONFIG_SYS_MALLOC_DEFAULT_TO_INIT
++# CONFIG_SYS_SPL_MALLOC_START=0x42200000
 diff --git a/include/configs/phycore_imx8mp.h b/include/configs/phycore_imx8mp.h
-index 1e801264..9ba22a33 100644
+index 1e801264..0aba1d4f 100644
 --- a/include/configs/phycore_imx8mp.h
 +++ b/include/configs/phycore_imx8mp.h
-@@ -178,4 +178,22 @@
+@@ -178,4 +178,24 @@
  #define CONFIG_USB_MAX_CONTROLLER_COUNT         2
  #define CONFIG_SERIAL_TAG
  
@@ -176,7 +246,9 @@ index 1e801264..9ba22a33 100644
 +#define CONFIG_SYS_MMCSD_RAW_MODE_ARGS_SECTOR 0x2FAF080    // FDT sector start
 +#define CONFIG_SYS_MMCSD_RAW_MODE_ARGS_SECTORS 0x200       // FDT sectors count
 +#define CONFIG_SYS_MMCSD_RAW_MODE_KERNEL_SECTOR 0x2FAF280  // Kernel Image sector start
-+#define CONFIG_SYS_OS_BASE 0x1000000                       // fake address - needed constant for compilation in Falcon mode
++// #define CONFIG_SYS_OS_BASE 0x1000000                       // fake address - needed constant for compilation in Falcon mode
++#define CONFIG_SPL_FS_LOAD_KERNEL_NAME "Image.itb"
++#define CONFIG_SPL_FS_LOAD_ARGS_NAME "imx8mp-phyboard-pollux-rdk-falcon.dtb"
 +
  #endif /* __PHYCORE_IMX8MP_H */
 diff --git a/include/log.h b/include/log.h

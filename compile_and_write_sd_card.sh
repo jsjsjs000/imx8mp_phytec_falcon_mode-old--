@@ -10,8 +10,11 @@ firmware=firmware-imx-8.18.1
 # firmware=firmware-imx-8.14
 # firmware=firmware-imx-8.18.1
 
-# flash_evk=flash_evk         # normal boot
-flash_evk=flash_evk_falcon  # Falcon boot
+flash_evk=flash_evk         # normal boot
+# flash_evk=flash_evk_falcon  # Falcon boot
+
+build_kernel=yes
+# build_kernel=no
 
 default="\e[0m"
 red="\e[31m"
@@ -48,7 +51,7 @@ fi
 
 sleep 1
 
-# -------------------------------------
+# -------------------- ATF --------------------
 cd imx-atf/
 # Phytec SDK toolchain
 source /opt/ampliphy-vendor-xwayland/BSP-Yocto-NXP-i.MX8MP-PD$pd/environment-setup-cortexa53-crypto-phytec-linux
@@ -69,7 +72,7 @@ else
 	echo -e "${default}"
 fi
 
-# -------------------------------------
+# -------------------- U-boot --------------------
 cd u-boot-imx/
 make distclean  # 4
 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- make phycore-imx8mp_defconfig
@@ -81,10 +84,10 @@ cp arch/arm/dts/imx8mp-phyboard-pollux-rdk.dtb ../imx-mkimage/iMX8M/  # 6
 cp tools/mkimage ../imx-mkimage/iMX8M/mkimage_uboot  # 7
 cd ..
 
-# -------------------------------------
+# -------------------- mk-image --------------------
 cd imx-mkimage/  # 8
 cp ../$firmware/firmware/ddr/synopsys/lpddr4* ../imx-mkimage/iMX8M/  # 2
-# $$$$ cp ../$firmware/firmware/hdmi/cadence/signed_hdmi_imx8m.bin ../imx-mkimage/iMX8M/
+# cp ../$firmware/firmware/hdmi/cadence/signed_hdmi_imx8m.bin ../imx-mkimage/iMX8M/
 make SOC=iMX8MP dtbs=imx8mp-phyboard-pollux-rdk.dtb $flash_evk
 cd ..
 
@@ -97,17 +100,53 @@ else
 	echo -e "${default}"
 fi
 
+# -------------------- Linux Kernel --------------------
+if [ $build_kernel == "yes" ]; then
+	cd linux-imx/
+
+	if [ ! -f .config ]; then
+		ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- make imx_v8_defconfig
+	fi
+
+	ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- make -j $(nproc --all) all
+
+	cd ..
+fi
+
 sudo dd if=imx-mkimage/iMX8M/flash.bin of=${sdcard} bs=1k seek=32 conv=fsync; sync
-sudo dd if=imx-atf/build/imx8mp/release/bl31.bin of=${sdcard} bs=512 seek=50131584 conv=fsync; sync
+# sudo dd if=imx-atf/build/imx8mp/release/bl31.bin of=${sdcard} bs=512 seek=50131584 conv=fsync; sync
 
-cd linux-imx/arch/arm64/boot/
-# mkimage -A arm -O linux -T kernel -C none -a 0x57FFFFC0 -e 0x58000000 -n "Linux kernel" -d Image uImage
+if [ $flash_evk == "flash_evk_falcon" ]; then
+# -------------------- u-boot.itb to SD card --------------------
+	cp imx-mkimage/iMX8M/u-boot.itb /media/$USER/boot
 
-# sudo mkdir -p /media/$USER/root/home/root/.falcon
-# sudo cp uImage /media/$USER/root/home/root/.falcon
+# -------------------- FIT image contains the ATF and the kernel Image --------------------
+	cp linux-imx/arch/arm64/boot/Image imx-mkimage/iMX8M/
+
+	cd imx-mkimage/iMX8M/
+	chmod +x ../mkimage_fit_atf_kernel.sh
+	# FIT image
+	ATF_LOAD_ADDR=0x00970000 KERNEL_LOAD_ADDR=0x40200000 ../mkimage_fit_atf_kernel.sh > Image.its
+	# FIT binary
+	./mkimage_uboot -E -p 0x3000 -f Image.its Image.itb
+	cp Image.itb /media/$USER/boot
+	cd ../..
+
+# -------------------- Flattened Device Tree --------------------
+	cd linux-imx/arch/arm64/boot/
+	mkimage -A arm -O linux -T kernel -C none -a 0x43FFFFC0 -e 0x44000000 -n "Linux kernel" -d Image uImage
+	sudo mkdir -p /media/$USER/root/home/root/.falcon
+	sudo cp uImage /media/$USER/root/home/root/.falcon
+	cd ../../../..
+fi
+
+# -------------------- Unmount SD card --------------------
 sync; umount /media/$USER/boot; umount /media/$USER/root
 ls /media/$USER/
-cd ../../../..
 
 ls -al imx-mkimage/iMX8M/flash.bin
 ls -al imx-atf/build/imx8mp/release/bl31.bin
+ls -al imx-mkimage/iMX8M/u-boot.itb
+ls -al imx-mkimage/iMX8M/Image.its
+ls -al imx-mkimage/iMX8M/Image.itb
+ls -al u-boot-imx/spl/u-boot-spl*.bin
